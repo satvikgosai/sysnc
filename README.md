@@ -14,6 +14,28 @@ A utility for system shell command execution via netcat, exploiting Android zygo
 
 ## Installation
 
+### Quick Installation (Recommended)
+
+1. Clone or download the script:
+   ```bash
+   git clone <repository-url>
+   cd sysnc
+   ```
+
+2. Run the installation script:
+   ```bash
+   chmod +x install.sh
+   ./install.sh
+   ```
+
+3. Restart your shell:
+   ```bash
+   source ~/.bashrc
+   # or simply restart Termux
+   ```
+
+### Manual Installation
+
 1. Clone or download the script:
    ```bash
    git clone <repository-url>
@@ -25,7 +47,16 @@ A utility for system shell command execution via netcat, exploiting Android zygo
    chmod +x sysnc
    ```
 
-3. Add to PATH (optional):
+3. Install dependencies:
+   ```bash
+   # Update package list
+   pkg update
+   
+   # Install netcat
+   pkg install netcat-openbsd
+   ```
+
+4. Add to PATH:
    ```bash
    # Copy to system bin directory
    cp sysnc $PREFIX/bin/
@@ -35,11 +66,17 @@ A utility for system shell command execution via netcat, exploiting Android zygo
    source ~/.bashrc
    ```
 
-4. Install netcat (if not already installed):
-   ```bash
-   # Termux (Android)
-   pkg install netcat-openbsd
-   ```
+### Verification
+
+After installation, verify everything works:
+
+```bash
+# Check if sysnc is available
+which sysnc
+
+# Test help command
+sysnc --help
+```
 
 ## Usage
 
