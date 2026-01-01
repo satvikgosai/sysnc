@@ -60,20 +60,39 @@ check_dependencies() {
 # Function to install sysnc script
 install_sysnc() {
     print_status "Installing sysnc script..."
-    
-    # Check if sysnc script exists
-    if [ ! -f "$SCRIPT_NAME" ]; then
-        print_error "sysnc script not found in current directory"
-        print_error "Please run this script from the directory containing sysnc"
+
+    SCRIPT_URL="https://raw.githubusercontent.com/satvikgosai/sysnc/main/sysnc"
+
+    # Create temporary file for download
+    TMP=$(mktemp)
+
+    # Cleanup on exit
+    cleanup() {
+        rm -f "${TMP:-}"
+    }
+    trap cleanup EXIT
+
+    print_status "Downloading sysnc script from remote repository..."
+
+    # Try curl first, then wget
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL "$SCRIPT_URL" -o "$TMP"; then
+            print_error "Failed to download sysnc script using curl"
+            exit 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -qO "$TMP" "$SCRIPT_URL"; then
+            print_error "Failed to download sysnc script using wget"
+            exit 1
+        fi
+    else
+        print_error "Neither curl nor wget is installed. Please install one of them and retry."
         exit 1
     fi
-    
-    # Make script executable
-    chmod +x "$SCRIPT_NAME"
-    
-    # Copy to bin directory
-    cp "$SCRIPT_NAME" "$INSTALL_DIR/"
-    
+
+    # Install script with correct permissions
+    install -m 755 "$TMP" "$INSTALL_DIR/$SCRIPT_NAME"
+
     print_success "sysnc script installed to $INSTALL_DIR"
 }
 
