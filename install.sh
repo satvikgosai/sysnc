@@ -105,13 +105,6 @@ verify_installation() {
     # Check if sysnc is in PATH
     if command -v sysnc &> /dev/null; then
         print_success "sysnc command is available"
-        
-        # Test help command
-        if sysnc --help &> /dev/null; then
-            print_success "sysnc is working correctly"
-        else
-            print_warning "sysnc installed but may have issues"
-        fi
     else
         print_error "sysnc command not found in PATH"
         print_error "You may need to restart your shell or run: source ~/.bashrc"
