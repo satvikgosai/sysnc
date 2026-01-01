@@ -16,29 +16,15 @@ A utility for system shell command execution via netcat, exploiting Android zygo
 
 ### Quick Installation (Recommended)
 
-1. Clone or download the script:
    ```bash
-   git clone <repository-url>
-   cd sysnc
-   ```
-
-2. Run the installation script:
-   ```bash
-   chmod +x install.sh
-   ./install.sh
-   ```
-
-3. Restart your shell:
-   ```bash
-   source ~/.bashrc
-   # or simply restart Termux
+   curl -fsSL https://raw.githubusercontent.com/satvikgosai/sysnc/main/install.sh | bash
    ```
 
 ### Manual Installation
 
 1. Clone or download the script:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/satvikgosai/sysnc.git
    cd sysnc
    ```
 
