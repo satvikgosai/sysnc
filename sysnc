@@ -8,8 +8,7 @@
 
 readonly SYSNC_VERSION="0.2.0"
 
-# Configuration (override via env vars or --host/--port flags;
-# --uid is only honoured together with -s/--setup).
+# Configuration (override via env vars or --host/--port/--uid flags).
 NC_HOST="${NC_HOST:-localhost}"
 NC_PORT="${NC_PORT:-1234}"
 NC_UID="${NC_UID:-1000}"
@@ -28,7 +27,7 @@ Usage: sysnc [OPTIONS]
 Options:
   -c, --command CMD     Send a single command (quote it if it contains spaces)
   -s, --setup           Setup netcat server (system shell via zygote injection)
-  -u, --uid UID         Specify UID for setup (must be >= 1000, default: ${NC_UID})
+      --uid UID         Specify UID for setup (must be >= 1000, default: ${NC_UID})
   -k, --kill            Kill the running netcat server
       --host HOST       Server host (default: ${NC_HOST}, env: NC_HOST)
       --port PORT       Server port (default: ${NC_PORT}, env: NC_PORT)
@@ -40,7 +39,7 @@ Examples:
   sysnc                          # Interactive mode
   sysnc -c "ls -la"              # Send a single command
   sysnc -s                       # Setup server with default UID (${NC_UID})
-  sysnc -s -u 1000               # Setup server with explicit UID
+  sysnc -s --uid 1000            # Setup server with explicit UID
   sysnc -k                       # Kill the running server
   sysnc --host 10.0.0.5 --port 4444 -c "id"
   cat script.sh | sysnc          # Pipe a script and close connection
@@ -146,14 +145,13 @@ kill_server() {
 setup_server() {
     local uid=$NC_UID
 
-    # Skip the first argument (-s/--setup) and parse remaining flags.
+    # --uid is consumed in the pre-pass; anything left after -s is unexpected.
     shift
-    if [ $# -ge 1 ] && { [ "$1" = "-u" ] || [ "$1" = "--uid" ]; }; then
-        [ $# -ge 2 ] || die "UID value required after -u/--uid" "Run 'sysnc -h' for more information"
-        uid=$2
-        if ! [[ "$uid" =~ ^[0-9]+$ ]] || [ "$uid" -lt 1000 ]; then
-            die "UID must be a number >= 1000" "Provided UID: $uid"
-        fi
+    [ $# -eq 0 ] || die "Unexpected argument '$1' after -s/--setup" \
+                        "Run 'sysnc -h' for more information"
+
+    if ! [[ "$uid" =~ ^[0-9]+$ ]] || [ "$uid" -lt 1000 ]; then
+        die "UID must be a number >= 1000" "Provided UID: $uid"
     fi
 
     echo "Setting up system shell netcat server using Android Zygote Injection"
@@ -230,7 +228,7 @@ send_command() {
 
 command -v nc &>/dev/null || die "netcat (nc) is not installed or not in PATH"
 
-# Pre-pass: extract --host and --port (they can appear anywhere) so that
+# Pre-pass: extract --host, --port, and --uid (they can appear anywhere) so
 # subsequent action parsing can use the resolved values.
 args=()
 while [ $# -gt 0 ]; do
@@ -243,6 +241,11 @@ while [ $# -gt 0 ]; do
         --port)
             [ $# -ge 2 ] || die "--port requires an argument"
             NC_PORT="$2"
+            shift 2
+            ;;
+        --uid)
+            [ $# -ge 2 ] || die "--uid requires an argument"
+            NC_UID="$2"
             shift 2
             ;;
         *)

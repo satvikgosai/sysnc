@@ -70,7 +70,7 @@ rm "$PREFIX/bin/sysnc"
 sysnc                            # Interactive mode
 sysnc -c "ls -la"                # Send a single command
 sysnc -s                         # Setup system-shell netcat server (default UID 1000)
-sysnc -s -u 1000                 # Setup with an explicit UID
+sysnc -s --uid 1000              # Setup with an explicit UID
 sysnc -k                         # Kill the running server
 sysnc --host 10.0.0.5 --port 4444 -c "id"
 cat script.sh | sysnc            # Pipe a script and close
@@ -84,7 +84,7 @@ sysnc -v                         # Version
 | --- | --- |
 | `-c, --command CMD...` | Send command to server and close connection |
 | `-s, --setup` | Setup netcat server via Android zygote injection |
-| `-u, --uid UID` | UID for setup (must be **≥ 1000**, default `1000`) |
+| `--uid UID` | UID for setup (must be **≥ 1000**, default `1000`) |
 | `-k, --kill` | Kill the running netcat server |
 | `--host HOST` | Server host (default `localhost`) |
 | `--port PORT` | Server port (default `1234`) |
@@ -115,7 +115,7 @@ sysnc --host 10.0.0.5 --port 4444 -c "id"
 | --- | --- | --- |
 | `NC_HOST` | `--host` | `localhost` |
 | `NC_PORT` | `--port` | `1234` |
-| `NC_UID` | `-u`, `--uid` | `1000` |
+| `NC_UID` | `--uid` | `1000` |
 
 ## Android zygote injection setup
 
