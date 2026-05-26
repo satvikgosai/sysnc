@@ -1,136 +1,179 @@
 #!/bin/bash
-
+# shellcheck shell=bash
+#
 # sysnc Installation Script for Termux
-# This script installs sysnc and its dependencies in Termux
+# Installs (or uninstalls) sysnc and its dependencies in Termux.
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Colors for output (disabled when stdout is not a TTY).
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' BLUE='' NC=''
+fi
 
-# Configuration
-INSTALL_DIR="$PREFIX/bin"
 SCRIPT_NAME="sysnc"
+SCRIPT_URL="https://raw.githubusercontent.com/satvikgosai/sysnc/main/sysnc"
 
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+print_status()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+show_help() {
+    cat <<EOF
+sysnc installer
+
+Usage: install.sh [OPTIONS]
+
+Options:
+  -u, --uninstall   Remove sysnc and exit
+  -h, --help        Show this help message
+
+This script must be run inside Termux on Android.
+EOF
 }
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Function to check if running in Termux
-check_termux() {
-    if [ ! -d "$PREFIX" ]; then
-        print_error "This script is designed for Termux. PREFIX directory not found."
-        print_error "Please run this script in Termux environment."
+require_termux() {
+    if [ -z "${PREFIX:-}" ] || [ ! -d "$PREFIX" ]; then
+        print_error "This script is designed for Termux."
+        print_error "The PREFIX environment variable is not set or does not point to a directory."
+        print_error "Please run this script inside the Termux app."
         exit 1
     fi
+    INSTALL_DIR="$PREFIX/bin"
 }
 
-# Function to check dependencies
-check_dependencies() {
+install_dependencies() {
     print_status "Checking dependencies..."
-    
-    # Check for netcat
-    if ! command -v nc &> /dev/null; then
-        print_warning "netcat not found. Installing netcat-openbsd..."
-        pkg update && pkg install -y netcat-openbsd
-        print_success "netcat installed"
-    else
+
+    if command -v nc &>/dev/null; then
         print_success "netcat already installed"
+        return
     fi
-    
+
+    print_warning "netcat not found. Installing netcat-openbsd..."
+    # pkg update is best-effort: a transient network blip shouldn't abort install.
+    pkg update -y || print_warning "pkg update failed; continuing with cached repo data"
+    pkg install -y netcat-openbsd
+    print_success "netcat installed"
 }
 
-# Function to install sysnc script
-install_sysnc() {
-    print_status "Installing sysnc script..."
+# Validate that a downloaded file looks like the sysnc bash script.
+validate_script() {
+    local file="$1"
+    local first_line
+    first_line=$(head -n 1 "$file")
+    case "$first_line" in
+        '#!/bin/bash'|'#!/usr/bin/env bash')
+            return 0
+            ;;
+        *)
+            print_error "Downloaded file does not start with a bash shebang: '$first_line'"
+            print_error "Refusing to install a potentially corrupted or malicious file."
+            return 1
+            ;;
+    esac
+}
 
-    SCRIPT_URL="https://raw.githubusercontent.com/satvikgosai/sysnc/main/sysnc"
+download_script() {
+    local dest="$1"
+    print_status "Downloading sysnc from $SCRIPT_URL ..."
 
-    # Create temporary file for download
-    TMP=$(mktemp)
-
-    # Cleanup on exit
-    cleanup() {
-        rm -f "${TMP:-}"
-    }
-    trap cleanup EXIT
-
-    print_status "Downloading sysnc script from remote repository..."
-
-    # Try curl first, then wget
-    if command -v curl >/dev/null 2>&1; then
-        if ! curl -fsSL "$SCRIPT_URL" -o "$TMP"; then
-            print_error "Failed to download sysnc script using curl"
-            exit 1
-        fi
-    elif command -v wget >/dev/null 2>&1; then
-        if ! wget -qO "$TMP" "$SCRIPT_URL"; then
-            print_error "Failed to download sysnc script using wget"
-            exit 1
-        fi
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$SCRIPT_URL" -o "$dest" \
+            || { print_error "curl failed to download sysnc"; return 1; }
+    elif command -v wget &>/dev/null; then
+        wget -qO "$dest" "$SCRIPT_URL" \
+            || { print_error "wget failed to download sysnc"; return 1; }
     else
-        print_error "Neither curl nor wget is installed. Please install one of them and retry."
-        exit 1
+        print_error "Neither curl nor wget is installed. Install one and retry."
+        return 1
     fi
-
-    # Install script with correct permissions
-    install -m 755 "$TMP" "$INSTALL_DIR/$SCRIPT_NAME"
-
-    print_success "sysnc script installed to $INSTALL_DIR"
 }
 
+install_sysnc() {
+    local target="$INSTALL_DIR/$SCRIPT_NAME"
 
+    if [ -e "$target" ]; then
+        print_warning "Existing $target will be overwritten"
+    fi
 
-# Function to verify installation
+    local tmp
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+
+    download_script "$tmp" || exit 1
+    validate_script "$tmp" || exit 1
+
+    install -m 755 "$tmp" "$target"
+    print_success "sysnc installed to $target"
+}
+
 verify_installation() {
     print_status "Verifying installation..."
-    
-    # Check if sysnc is in PATH
-    if command -v sysnc &> /dev/null; then
-        print_success "sysnc command is available"
+    if command -v "$SCRIPT_NAME" &>/dev/null; then
+        local found
+        found=$(command -v "$SCRIPT_NAME")
+        if [ "$found" = "$INSTALL_DIR/$SCRIPT_NAME" ]; then
+            print_success "$SCRIPT_NAME is on PATH at $found"
+        else
+            print_warning "$SCRIPT_NAME resolves to $found (not $INSTALL_DIR/$SCRIPT_NAME)"
+            print_warning "Another version may be shadowing the freshly installed one."
+        fi
     else
-        print_error "sysnc command not found in PATH"
-        print_error "You may need to restart your shell or run: source ~/.bashrc"
+        print_error "$SCRIPT_NAME not found on PATH"
+        print_error "Try restarting Termux or check that $INSTALL_DIR is on \$PATH."
+        exit 1
     fi
 }
 
+uninstall_sysnc() {
+    require_termux
+    local target="$INSTALL_DIR/$SCRIPT_NAME"
+    if [ -e "$target" ]; then
+        rm -f "$target"
+        print_success "Removed $target"
+    else
+        print_warning "$target not found; nothing to remove"
+    fi
+}
 
-# Main installation process
 main() {
+    case "${1:-}" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -u|--uninstall)
+            uninstall_sysnc
+            exit 0
+            ;;
+        '') ;;
+        *)
+            print_error "Unknown argument: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+
     echo "=========================================="
     echo "sysnc Installation Script for Termux"
     echo "=========================================="
     echo ""
-    
-    # Check if running in Termux
-    check_termux
-    
-    # Check and install dependencies
-    check_dependencies
-    
-    # Install sysnc script
+
+    require_termux
+    install_dependencies
     install_sysnc
-    
-    # Verify installation
     verify_installation
+
+    echo ""
+    print_success "Installation complete. Run 'sysnc -h' to get started."
 }
 
-# Run main function
 main "$@"
