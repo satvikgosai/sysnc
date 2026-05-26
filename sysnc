@@ -8,7 +8,8 @@
 
 readonly SYSNC_VERSION="0.2.0"
 
-# Configuration (override via env vars or --host/--port/--uid flags)
+# Configuration (override via env vars or --host/--port flags;
+# --uid is only honoured together with -s/--setup).
 NC_HOST="${NC_HOST:-localhost}"
 NC_PORT="${NC_PORT:-1234}"
 NC_UID="${NC_UID:-1000}"
@@ -22,10 +23,10 @@ show_help() {
 System Shell Netcat Command Sender (v${SYSNC_VERSION})
 =====================================
 
-Usage: sysnc [OPTIONS] [-- COMMAND...]
+Usage: sysnc [OPTIONS]
 
 Options:
-  -c, --command CMD...  Send command to server and close connection
+  -c, --command CMD     Send a single command (quote it if it contains spaces)
   -s, --setup           Setup netcat server (system shell via zygote injection)
   -u, --uid UID         Specify UID for setup (must be >= 1000, default: ${NC_UID})
   -k, --kill            Kill the running netcat server
@@ -75,7 +76,7 @@ set_prompt() {
     _pwd="$PWD"
     case "$_pwd" in
         "$HOME") _pwd='~' ;;
-        "$HOME"/*) _pwd="~${_pwd#$HOME}" ;;
+        "$HOME"/*) _pwd="~${_pwd#"$HOME"}" ;;
     esac
     PS1="${_sysnc_green}${_sysnc_user}${_sysnc_reset}@${_sysnc_yellow}${_sysnc_host}${_sysnc_reset}:${_sysnc_cyan}${_pwd}${_sysnc_reset}$ "
 }
@@ -160,17 +161,27 @@ setup_server() {
     echo ""
 
     if ! command -v rish &>/dev/null; then
-        echo "Error: rish (Shizuku) is not installed or not in PATH" >&2
-        echo "" >&2
-        echo "Setup Instructions:" >&2
-        echo "   1. Install Shizuku: https://github.com/RikkaApps/Shizuku" >&2
-        echo "   2. Setup rish with Shizuku" >&2
-        echo "" >&2
-        echo "OR run these commands manually via 'adb shell':" >&2
-        echo "1:   $(stop_setting)" >&2
-        echo "2:   $(zygote_injection "$uid")" >&2
-        echo "3:   $(start_setting)" >&2
-        echo "4:   $(clean_up_setting)" >&2
+        {
+            echo "Error: rish (Shizuku) is not installed or not in PATH"
+            echo ""
+            echo "Setup Instructions:"
+            echo "   1. Install Shizuku: https://github.com/RikkaApps/Shizuku"
+            echo "   2. Setup rish with Shizuku"
+            echo ""
+            echo "OR run these commands manually via 'adb shell':"
+            echo ""
+            echo "# 1) Stop the Settings app"
+            stop_setting
+            echo ""
+            echo "# 2) Inject zygote payload (paste the whole multi-line block as one command)"
+            zygote_injection "$uid"
+            echo ""
+            echo "# 3) Restart the Settings app"
+            start_setting
+            echo ""
+            echo "# 4) Clean up hidden-API exemptions"
+            clean_up_setting
+        } >&2
         exit 1
     fi
 
@@ -206,7 +217,9 @@ setup_server() {
 
 send_command() {
     local cmd="$1"
-    echo "$cmd" | nc -N "$NC_HOST" "$NC_PORT" \
+    # -w 5 caps the wait if the server is unreachable; the command is fully
+    # buffered up-front, so the idle-timeout aspect of -w doesn't truncate output.
+    echo "$cmd" | nc -N -w 5 "$NC_HOST" "$NC_PORT" \
         || die "Failed to connect to $NC_HOST:$NC_PORT" \
                "Make sure the netcat server is running and accessible."
 }
@@ -238,14 +251,13 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
-set -- "${args[@]:-}"
-# When args[] is empty, the line above leaves $1 as the empty string under
-# bash's "unbound array" handling; normalise that to no args.
-[ "${1:-}" = "" ] && [ $# -le 1 ] && set --
+# ${array[@]+...} expands to its content only when the array has elements,
+# so an empty args[] cleanly produces no positional parameters.
+set -- ${args[@]+"${args[@]}"}
 
 # Handle piped input (only when no flags were given).
 if [ ! -t 0 ] && [ $# -eq 0 ]; then
-    cat | nc -N "$NC_HOST" "$NC_PORT" \
+    nc -N "$NC_HOST" "$NC_PORT" \
         || die "Failed to connect to $NC_HOST:$NC_PORT" \
                "Make sure the netcat server is running and accessible."
     exit 0

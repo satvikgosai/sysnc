@@ -139,10 +139,10 @@ The server isn't running, was killed, or is bound to a different host/port. Run 
 Install [Shizuku][shizuku] and set up `rish`, or paste the four commands `sysnc -s` prints into an `adb shell`.
 
 **`Error: UID must be a number >= 1000`**
-Android forbids zygote-fork into UIDs below 1000 for app processes. Use `1000` (system) or any app UID ≥ 10000.
+Android forbids zygote-fork into UIDs below 1000. Use `1000` for a system shell, or an app UID ≥ 10000 for a sandboxed shell. UIDs in the 1001–9999 range are reserved system identities (radio, bluetooth, etc.) — the script accepts them, but they are rarely what you want.
 
 **The interactive shell looks plain / no colours**
-The remote shell needs to support ANSI escapes (`TERM=xterm-256color`). Some minimal `sh` builds may not honour `PS1` substitutions — try `sysnc -c "bash -i"` if `bash` is available remotely.
+The remote shell needs to support ANSI escapes (`TERM=xterm-256color`). Some minimal `sh` builds may not honour `PS1` substitutions — connect via `sysnc` (interactive mode) and run `bash` once the session opens, if `bash` is available remotely.
 
 **`nc: invalid option` or unexpected flag errors**
 sysnc relies on OpenBSD-netcat semantics (`-N`, `-w`). On macOS the bundled `nc` is different — install `netcat` from Homebrew or use Termux. On Termux, `pkg install netcat-openbsd`.
